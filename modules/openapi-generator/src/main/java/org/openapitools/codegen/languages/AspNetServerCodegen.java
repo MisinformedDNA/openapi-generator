@@ -83,7 +83,7 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
     protected int serverPort = 8080;
     protected String serverHost = "0.0.0.0";
     protected CliOption swashbuckleVersion = new CliOption(SWASHBUCKLE_VERSION, "Swashbuckle version: 3.0.0 (deprecated), 4.0.0 (deprecated), 5.0.0 (deprecated), 6.4.0");
-    protected CliOption aspnetCoreVersion = new CliOption(ASPNET_CORE_VERSION, "ASP.NET Core version: 6.0, 5.0, 3.1, 3.0, 2.2, 2.1, 2.0 (deprecated)");
+    protected CliOption aspnetCoreVersion = new CliOption(ASPNET_CORE_VERSION, "ASP.NET Core version: 10.0, 9.0, 8.0, 7.0, 6.0, 5.0, 3.1, 3.0, 2.2, 2.1, 2.0 (deprecated)");
     private CliOption classModifier = new CliOption(CLASS_MODIFIER, "Class Modifier for controller classes: Empty string or abstract.");
     private CliOption operationModifier = new CliOption(OPERATION_MODIFIER, "Operation Modifier can be virtual or abstract");
     private CliOption modelClassModifier = new CliOption(MODEL_CLASS_MODIFIER, "Model Class Modifier can be nothing or partial");
@@ -196,6 +196,8 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
         aspnetCoreVersion.addEnum("6.0", "ASP.NET Core 6.0");
         aspnetCoreVersion.addEnum("7.0", "ASP.NET Core 7.0");
         aspnetCoreVersion.addEnum("8.0", "ASP.NET Core 8.0");
+        aspnetCoreVersion.addEnum("9.0", "ASP.NET Core 9.0");
+        aspnetCoreVersion.addEnum("10.0", "ASP.NET Core 10.0");
         aspnetCoreVersion.setDefault("8.0");
         aspnetCoreVersion.setOptValue(aspnetCoreVersion.getDefault());
         cliOptions.add(aspnetCoreVersion);
@@ -459,7 +461,9 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
             supportingFiles.add(new SupportingFile("appsettings.json", packageFolder, "appsettings.json"));
             supportingFiles.add(new SupportingFile("appsettings.Development.json", packageFolder, "appsettings.Development.json"));
 
-            supportingFiles.add(new SupportingFile("Startup.mustache", packageFolder, "Startup.cs"));
+            if (!isMinimalHostingModel()) {
+                supportingFiles.add(new SupportingFile("Startup.mustache", packageFolder, "Startup.cs"));
+            }
             supportingFiles.add(new SupportingFile("Program.mustache", packageFolder, "Program.cs"));
             supportingFiles.add(new SupportingFile("Properties" + File.separator + "launchSettings.json",
                     packageFolder + File.separator + "Properties", "launchSettings.json"));
@@ -744,18 +748,42 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
 
     private String determineTemplateVersion(String frameworkVersion) {
         switch (frameworkVersion) {
+            case "10.0":
+            case "9.0":
+                return "10.0";
+
             case "8.0":
             case "7.0":
             case "6.0":
             case "5.0":
             case "3.1":
+            case "3.0":
                 return "3.0";
 
             case "2.2":
+            case "2.1":
+            case "2.0":
                 return "2.1";
 
             default:
-                return frameworkVersion;
+                return "10.0";
+        }
+    }
+
+    private boolean isMinimalHostingModel() {
+        switch (aspnetCoreVersion.getOptValue()) {
+            case "2.0":
+            case "2.1":
+            case "2.2":
+            case "3.0":
+            case "3.1":
+            case "5.0":
+            case "6.0":
+            case "7.0":
+            case "8.0":
+                return false;
+            default:
+                return true;
         }
     }
 
@@ -804,58 +832,40 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
     }
 
     private void setIsFramework() {
-        if (aspnetCoreVersion.getOptValue().startsWith("3.")) {// default, do nothing
+        String version = aspnetCoreVersion.getOptValue();
+        additionalProperties.put(TARGET_FRAMEWORK, resolveTargetFramework(version));
+
+        if (!version.startsWith("2.")) {
             LOGGER.warn(
                     "ASP.NET core version is {} so changing to use frameworkReference instead of packageReference ",
-                    aspnetCoreVersion.getOptValue());
+                    version);
             useFrameworkReference = true;
             additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            additionalProperties.put(TARGET_FRAMEWORK, "netcoreapp" + aspnetCoreVersion.getOptValue());
-        } else if (aspnetCoreVersion.getOptValue().startsWith("5.")) {// default, do nothing
-            LOGGER.warn(
-                    "ASP.NET core version is {} so changing to use frameworkReference instead of packageReference ",
-                    aspnetCoreVersion.getOptValue());
-            useFrameworkReference = true;
-            additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            additionalProperties.put(TARGET_FRAMEWORK, "net5.0");
-        } else if (aspnetCoreVersion.getOptValue().startsWith("6.")) {
-            LOGGER.warn(
-                    "ASP.NET core version is {} so changing to use frameworkReference instead of packageReference ",
-                    aspnetCoreVersion.getOptValue());
-            useFrameworkReference = true;
-            additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            additionalProperties.put(TARGET_FRAMEWORK, "net6.0");
-        } else if (aspnetCoreVersion.getOptValue().startsWith("7.")) {
-            LOGGER.warn(
-                    "ASP.NET core version is {} so changing to use frameworkReference instead of packageReference ",
-                    aspnetCoreVersion.getOptValue());
-            useFrameworkReference = true;
-            additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            additionalProperties.put(TARGET_FRAMEWORK, "net7.0");
-        } else if (aspnetCoreVersion.getOptValue().startsWith("8.")) {
-            LOGGER.warn(
-                    "ASP.NET core version is {} so changing to use frameworkReference instead of packageReference ",
-                    aspnetCoreVersion.getOptValue());
-            useFrameworkReference = true;
-            additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            additionalProperties.put(TARGET_FRAMEWORK, "net8.0");
+        } else if (additionalProperties.containsKey(USE_FRAMEWORK_REFERENCE)) {
+            useFrameworkReference = convertPropertyToBooleanAndWriteBack(USE_FRAMEWORK_REFERENCE);
         } else {
-            if (additionalProperties.containsKey(USE_FRAMEWORK_REFERENCE)) {
-                useFrameworkReference = convertPropertyToBooleanAndWriteBack(USE_FRAMEWORK_REFERENCE);
-            } else {
-                additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
-            }
-            additionalProperties.put(TARGET_FRAMEWORK, "netcoreapp" + aspnetCoreVersion);
+            additionalProperties.put(USE_FRAMEWORK_REFERENCE, useFrameworkReference);
         }
 
         setAdditionalPropertyForFramework();
     }
 
+    private String resolveTargetFramework(String version) {
+        switch (version) {
+            case "2.0":
+            case "2.1":
+            case "2.2":
+            case "3.0":
+            case "3.1":
+                return "netcoreapp" + version;
+            default:
+                return "net" + version;
+        }
+    }
+
     private void setAdditionalPropertyForFramework() {
         String targetFramework = ((String) additionalProperties.get(TARGET_FRAMEWORK));
-        if (targetFramework.startsWith("net6.0") ||
-                targetFramework.startsWith("net7.0") ||
-                targetFramework.startsWith("net8.0")) {
+        if (!targetFramework.startsWith("netcoreapp") && !"net5.0".equals(targetFramework)) {
             additionalProperties.put(NET_60_OR_LATER, true);
         }
     }
@@ -876,38 +886,27 @@ public class AspNetServerCodegen extends AbstractCSharpCodegen {
     }
 
     private void setUseEndpointRouting() {
-        if (aspnetCoreVersion.getOptValue().startsWith("3.") || aspnetCoreVersion.getOptValue().startsWith("5.") || aspnetCoreVersion.getOptValue().startsWith("6.")) {
-            LOGGER.warn("ASP.NET core version is {} so switching to old style endpoint routing.", aspnetCoreVersion.getOptValue());
-            useDefaultRouting = false;
-            additionalProperties.put(USE_DEFAULT_ROUTING, useDefaultRouting);
-        } else {
-            if (additionalProperties.containsKey(USE_DEFAULT_ROUTING)) {
-                useDefaultRouting = convertPropertyToBooleanAndWriteBack(USE_DEFAULT_ROUTING);
-            } else {
+        switch (aspnetCoreVersion.getOptValue()) {
+            case "3.0":
+            case "3.1":
+            case "5.0":
+            case "6.0":
+                LOGGER.warn("ASP.NET core version is {} so switching to old style endpoint routing.", aspnetCoreVersion.getOptValue());
+                useDefaultRouting = false;
                 additionalProperties.put(USE_DEFAULT_ROUTING, useDefaultRouting);
-            }
+                break;
+            default:
+                if (additionalProperties.containsKey(USE_DEFAULT_ROUTING)) {
+                    useDefaultRouting = convertPropertyToBooleanAndWriteBack(USE_DEFAULT_ROUTING);
+                } else {
+                    additionalProperties.put(USE_DEFAULT_ROUTING, useDefaultRouting);
+                }
         }
     }
 
     private void setSwashbuckleVersion() {
         setCliOption(swashbuckleVersion);
 
-        if (aspnetCoreVersion.getOptValue().startsWith("3.")) {
-            LOGGER.warn("ASP.NET core version is {} so changing default Swashbuckle version to 6.4.0.", aspnetCoreVersion.getOptValue());
-            swashbuckleVersion.setOptValue("6.4.0");
-            additionalProperties.put(SWASHBUCKLE_VERSION, swashbuckleVersion.getOptValue());
-        } else if (aspnetCoreVersion.getOptValue().startsWith("5.")) {
-            // for aspnet core 5.x, use Swashbuckle 6.4 instead
-            LOGGER.warn("ASP.NET core version is {} so changing default Swashbuckle version to 6.4.0.", aspnetCoreVersion.getOptValue());
-            swashbuckleVersion.setOptValue("6.4.0");
-            additionalProperties.put(SWASHBUCKLE_VERSION, swashbuckleVersion.getOptValue());
-        } else if (aspnetCoreVersion.getOptValue().startsWith("6.")) {
-            LOGGER.warn("ASP.NET core version is {} so changing default Swashbuckle version to 6.4.0.", aspnetCoreVersion.getOptValue());
-            swashbuckleVersion.setOptValue("6.4.0");
-            additionalProperties.put(SWASHBUCKLE_VERSION, swashbuckleVersion.getOptValue());
-        } else {
-            // default, do nothing
-            LOGGER.info("Swashbuckle version: {}", swashbuckleVersion.getOptValue());
-        }
+        LOGGER.info("Swashbuckle version: {}", swashbuckleVersion.getOptValue());
     }
 }
